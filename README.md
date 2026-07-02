@@ -1,36 +1,163 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Studio Gestor
 
-## Getting Started
+Sistema web fullstack para gestão operacional de rotinas, tarefas, setores, responsáveis, prazos e entregas em empresas de vários segmentos.
 
-First, run the development server:
+## Proposta
+
+O Studio Gestor não é exclusivo para contabilidade. A estrutura do MVP segue o fluxo:
+
+```txt
+Organização -> Segmentos -> Setores -> Rotinas -> Tarefas -> Responsáveis -> Prazos -> Status
+```
+
+Segmentos iniciais do seed:
+
+- Contabilidade
+- Empresa de TI
+- Recrutamento e Seleção
+- Jurídico
+- Marketing
+- Consultoria
+- Financeiro/BPO
+
+## Stack
+
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- shadcn/ui como padrão de componentes locais
+- Prisma ORM
+- PostgreSQL
+- Auth.js/NextAuth com credenciais
+- Zod
+- React Hook Form
+- date-fns
+- TanStack Table
+- Lucide React
+
+## Modo atual
+
+Nesta etapa, o sistema está em modo operacional local, sem login e sem dependência de PostgreSQL para navegar e testar as telas principais. Os dados ficam em `.demo/studio-gestor-data.json`, arquivo ignorado pelo Git.
+
+A autenticação, usuários reais e conexão definitiva com PostgreSQL ficam preservadas na estrutura do projeto para retomada posterior.
+
+## Configuração com banco
+
+1. Instale dependências:
+
+```bash
+npm install
+```
+
+2. Crie `.env` com base no `.env.example`:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
+AUTH_SECRET="gere-um-segredo-forte"
+AUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="mesmo-valor-do-auth-secret"
+NEXTAUTH_URL="http://localhost:3000"
+```
+
+3. Quando for ativar banco novamente, rode migrations e seed:
+
+```bash
+npm run prisma:migrate
+npm run db:seed
+```
+
+4. Inicie o projeto:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Login do seed futuro
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Admin: `admin@studiogestor.com`
+- Senha: `Studio@123`
 
-## Learn More
+Outros usuários fictícios também usam a senha `Studio@123`.
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```json
+{
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint",
+  "prisma:generate": "prisma generate",
+  "prisma:migrate": "prisma migrate dev",
+  "prisma:studio": "prisma studio",
+  "db:seed": "tsx prisma/seed.ts"
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Estrutura
 
-## Deploy on Vercel
+```txt
+app/
+  (auth)/login
+  (dashboard)/
+    dashboard
+    clientes
+    tarefas
+    rotinas
+    calendario
+    setores
+    segmentos
+    equipe
+    relatorios
+    configuracoes
+components/
+  badges/
+  dashboard/
+  forms/
+  layout/
+  tables/
+  ui/
+lib/
+  actions/
+  auth/
+  permissions/
+  prisma/
+  validations/
+prisma/
+  schema.prisma
+  seed.ts
+types/
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Perfis
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `ADMIN`: gerencia tudo.
+- `GESTOR`: vê tudo e gerencia rotinas/tarefas/clientes.
+- `COORDENADOR`: trabalha no próprio setor e equipe.
+- `COLABORADOR`: acompanha tarefas atribuídas e do setor.
+- `CONSULTA`: visualização.
+
+## Funcionalidades do MVP
+
+- Login com credenciais.
+- Dashboard com cards, próximos vencimentos, tarefas críticas e rankings.
+- CRUD de Clientes/Projetos.
+- CRUD de Tarefas com comentários e histórico.
+- CRUD de Rotinas e geração de tarefa.
+- CRUD de Segmentos.
+- CRUD de Setores.
+- Calendário por vencimento.
+- Equipe com edição rápida por admin.
+- Relatórios básicos.
+- Prisma schema com multiempresa simples.
+- Seed multi-segmento.
+
+## Próximos passos
+
+- Convites de usuários e redefinição de senha.
+- Auditoria avançada por módulo.
+- Notificações por e-mail.
+- Integrações externas como agenda, WhatsApp e arquivos.
+- Papéis e permissões configuráveis por organização.
