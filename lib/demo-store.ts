@@ -18,7 +18,8 @@ import {
   type FiscalRoutineTemplate,
 } from "@/lib/fiscal-routines";
 
-const storePath = path.join(process.cwd(), ".demo", "studio-gestor-data.json");
+const demoStoreDirectory = process.env.VERCEL ? path.join("/tmp", "studio-gestor") : path.join(process.cwd(), ".demo");
+const storePath = path.join(demoStoreDirectory, "studio-gestor-data.json");
 export const demoOrganizationId = "org-demo";
 
 export type DemoUser = {
