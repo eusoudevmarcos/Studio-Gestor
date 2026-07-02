@@ -1,6 +1,4 @@
-import { getServerSession } from "next-auth";
 import type { UserRole } from "@prisma/client";
-import { authOptions } from "@/lib/auth/options";
 import { getDemoStore } from "@/lib/demo-store";
 
 export type AppUser = {
@@ -15,10 +13,11 @@ export type AppUser = {
 };
 
 export async function getSession() {
-  if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
+  if (!process.env.NEXTAUTH_SECRET) {
     return null;
   }
 
+  const [{ getServerSession }, { authOptions }] = await Promise.all([import("next-auth"), import("@/lib/auth/options")]);
   return getServerSession(authOptions);
 }
 
