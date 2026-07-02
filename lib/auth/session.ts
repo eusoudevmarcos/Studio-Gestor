@@ -15,6 +15,10 @@ export type AppUser = {
 };
 
 export async function getSession() {
+  if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
+    return null;
+  }
+
   return getServerSession(authOptions);
 }
 
