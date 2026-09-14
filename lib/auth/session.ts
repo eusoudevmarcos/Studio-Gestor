@@ -1,5 +1,7 @@
 import type { UserRole } from "@prisma/client";
-import { getDemoStore } from "@/lib/demo-store";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth/options";
 
 export type AppUser = {
   id: string;
@@ -13,34 +15,12 @@ export type AppUser = {
 };
 
 export async function getSession() {
-  if (!process.env.NEXTAUTH_SECRET) {
-    return null;
-  }
-
-  const [{ getServerSession }, { authOptions }] = await Promise.all([import("next-auth"), import("@/lib/auth/options")]);
   return getServerSession(authOptions);
 }
 
-export async function requireUser() {
+// Usuário autenticado ou redirecionamento para o login.
+export async function requireUser(): Promise<AppUser> {
   const session = await getSession();
-
-  if (session?.user?.id && session.user.organizationId) {
-    return session.user;
-  }
-
-  const store = await getDemoStore();
-  const organization = store.organization;
-  const user = store.users.find((item) => item.id === "user-admin") ?? store.users[0];
-  const department = user?.departmentId ? store.departments.find((item) => item.id === user.departmentId) : null;
-
-  return {
-    id: user?.id ?? "no-auth-user",
-    name: user?.name ?? "Operação Studio",
-    email: user?.email ?? "operacao@studiogestor.local",
-    role: user?.role ?? "ADMIN",
-    organizationId: organization.id,
-    organizationName: organization.name,
-    departmentId: user?.departmentId ?? null,
-    departmentName: department?.name ?? null,
-  } satisfies AppUser;
+  if (!session?.user?.id || !session.user.organizationId) redirect("/login");
+  return session.user;
 }

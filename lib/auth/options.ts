@@ -1,15 +1,18 @@
 import { compare } from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { ensureBootstrap, normalizeEmail } from "@/lib/auth/bootstrap";
 import { loginSchema } from "@/lib/validations/auth";
 import { prisma } from "@/lib/prisma/client";
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   pages: {
     signIn: "/login",
   },
   session: {
     strategy: "jwt",
+    maxAge: 12 * 60 * 60,
   },
   providers: [
     CredentialsProvider({
@@ -20,27 +23,25 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         const parsed = loginSchema.safeParse(credentials);
+        if (!parsed.success) return null;
 
-        if (!parsed.success) {
-          return null;
+        const email = normalizeEmail(parsed.data.email);
+
+        // Primeiro acesso de uma instalação nova: cria organização, setores e admin do ambiente.
+        if (process.env.ADMIN_EMAIL && normalizeEmail(process.env.ADMIN_EMAIL) === email) {
+          await ensureBootstrap();
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
-          include: {
-            organization: true,
-            department: true,
-          },
+          where: { email },
+          include: { organization: true, department: true },
         });
 
-        if (!user?.passwordHash || !user.active || !user.organizationId) {
-          return null;
-        }
+        // Só entra quem foi cadastrado pela Equipe e está ativo.
+        if (!user || !user.active) return null;
 
         const passwordMatches = await compare(parsed.data.password, user.passwordHash);
-        if (!passwordMatches) {
-          return null;
-        }
+        if (!passwordMatches) return null;
 
         return {
           id: user.id,
@@ -48,7 +49,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           organizationId: user.organizationId,
-          organizationName: user.organization?.name,
+          organizationName: user.organization.name,
           departmentId: user.departmentId,
           departmentName: user.department?.name,
         };
@@ -65,7 +66,6 @@ export const authOptions: NextAuthOptions = {
         token.departmentId = user.departmentId;
         token.departmentName = user.departmentName;
       }
-
       return token;
     },
     async session({ session, token }) {
@@ -77,7 +77,6 @@ export const authOptions: NextAuthOptions = {
         session.user.departmentId = token.departmentId;
         session.user.departmentName = token.departmentName;
       }
-
       return session;
     },
   },

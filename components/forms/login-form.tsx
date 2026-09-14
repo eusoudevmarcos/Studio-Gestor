@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import type { LoginInput } from "@/lib/validations/auth";
@@ -15,6 +15,8 @@ import { FieldError } from "@/components/forms/form-utils";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
   const [error, setError] = useState<string | null>(null);
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -26,7 +28,7 @@ export function LoginForm() {
     const result = await signIn("credentials", {
       ...values,
       redirect: false,
-      callbackUrl: "/dashboard",
+      callbackUrl,
     });
 
     if (result?.error) {
@@ -34,12 +36,12 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(callbackUrl.startsWith("/") ? callbackUrl : "/dashboard");
     router.refresh();
   }
 
   return (
-    <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+    <form className="grid gap-4" method="post" action="/api/auth/callback/credentials" onSubmit={form.handleSubmit(onSubmit)}>
       <div className="grid gap-2">
         <Label htmlFor="email">E-mail</Label>
         <Input id="email" type="email" autoComplete="email" {...form.register("email")} />

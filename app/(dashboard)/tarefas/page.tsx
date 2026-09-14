@@ -2,7 +2,6 @@ import { Plus } from "lucide-react";
 import Link from "next/link";
 import { DepartmentBadge } from "@/components/badges/department-badge";
 import { PriorityBadge } from "@/components/badges/priority-badge";
-import { SegmentBadge } from "@/components/badges/segment-badge";
 import { StatusBadge } from "@/components/badges/status-badge";
 import { TaskFilters } from "@/components/forms/filters";
 import { TaskStatusControl } from "@/components/forms/task-status-control";
@@ -19,13 +18,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
   return (
     <div className="grid gap-5">
       <PageHeader
-        title="Tarefas"
-        description="Controle de responsáveis, prazos, status, prioridade e entregas."
+        title="Tarefas avulsas"
+        description="Demandas fora da rotina fixa: responsável, prazo, status e prioridade."
         actionHref="/tarefas/nova"
         actionLabel="Nova tarefa"
         actionIcon={Plus}
       />
-      <TaskFilters segments={options.segments} departments={options.departments} users={options.users} clients={options.clientProjects} />
+      <TaskFilters departments={options.departments} users={options.users} clients={options.clientProjects} />
       {tasks.length ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full min-w-[1100px] border-collapse text-sm">
@@ -46,7 +45,6 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                 <tr key={task.id} className="border-t border-slate-100">
                   <td className="px-4 py-3">
                     <Link href={`/tarefas/${task.id}`} className="font-medium text-sky-800 hover:underline">{task.title}</Link>
-                    <p className="mt-1 text-xs text-slate-500">{task.routine?.name ?? "Tarefa manual"}</p>
                   </td>
                   <td className="px-4 py-3">{task.clientProject?.name ?? "-"}</td>
                   <td className="px-4 py-3"><DepartmentBadge name={task.department.name} /></td>
@@ -56,10 +54,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                   </td>
                   <td className="px-4 py-3"><PriorityBadge priority={task.priority} /></td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-col gap-2">
-                      <StatusBadge status={task.status} />
-                      {task.segment ? <SegmentBadge name={task.segment.name} /> : null}
-                    </div>
+                    <StatusBadge status={task.status} />
                   </td>
                   <td className="px-4 py-3"><TaskStatusControl id={task.id} status={task.status} /></td>
                 </tr>
@@ -68,7 +63,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
           </table>
         </div>
       ) : (
-        <EmptyState title="Nenhuma tarefa encontrada" description="Crie tarefas manuais, gere tarefas por rotina ou ajuste os filtros." />
+        <EmptyState title="Nenhuma tarefa encontrada" description="Crie uma tarefa avulsa ou ajuste os filtros." />
       )}
     </div>
   );

@@ -2,11 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ClientProjectStatus, ClientProjectType } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth/session";
 import { onlyDigits, parseActivity, parseTaxRegime, brazilianStates, type BrazilianState } from "@/lib/accounting";
-import { closingModules } from "@/lib/closing";
-import { accountingSegmentId, mutateDemoStore, nextDemoId, type DemoClientProject } from "@/lib/demo-store";
+import { prisma } from "@/lib/prisma/client";
 import { companySchema, type CompanyInput } from "@/lib/validations/entities";
 
 function parse(formData: FormData) {
@@ -25,25 +24,26 @@ function revalidateCompanyPaths(id?: string) {
   revalidatePath("/dashboard");
 }
 
-function applyInput(client: DemoClientProject, data: CompanyInput) {
-  client.code = data.code ?? null;
-  client.name = data.name;
-  client.document = data.document ? onlyDigits(data.document) || data.document : null;
-  client.stateRegistration = data.stateRegistration ?? null;
-  client.districtRegistration = data.districtRegistration ?? null;
-  client.status = data.status;
-  client.mainResponsibleUserId = data.mainResponsibleUserId ?? null;
-  client.notes = data.notes ?? null;
-  client.accountingTaxRegime = data.accountingTaxRegime;
-  client.accountingActivity = data.accountingActivity;
-  client.accountingState = data.accountingState;
-  client.hasMonthlyMovement = data.hasMonthlyMovement;
-  client.issuesInvoices = data.issuesInvoices;
-  client.hasRentalIrrf = data.hasRentalIrrf;
-  client.employeesCount = data.employeesCount ?? null;
-  client.modules = data.modules;
-  client.stepOverrides = data.stepOverrides;
-  client.updatedAt = new Date();
+function toData(data: CompanyInput): Prisma.ClientProjectUncheckedUpdateInput {
+  return {
+    code: data.code ?? null,
+    name: data.name,
+    document: data.document ? onlyDigits(data.document) || data.document : null,
+    stateRegistration: data.stateRegistration ?? null,
+    districtRegistration: data.districtRegistration ?? null,
+    status: data.status,
+    mainResponsibleUserId: data.mainResponsibleUserId ?? null,
+    notes: data.notes ?? null,
+    accountingTaxRegime: data.accountingTaxRegime,
+    accountingActivity: data.accountingActivity,
+    accountingState: data.accountingState,
+    hasMonthlyMovement: data.hasMonthlyMovement,
+    issuesInvoices: data.issuesInvoices,
+    hasRentalIrrf: data.hasRentalIrrf,
+    employeesCount: data.employeesCount ?? null,
+    modules: data.modules,
+    stepOverrides: data.stepOverrides,
+  };
 }
 
 export async function createCompany(formData: FormData) {
@@ -51,40 +51,12 @@ export async function createCompany(formData: FormData) {
   assertCanWrite(user.role);
   const data = parse(formData);
 
-  const id = await mutateDemoStore((store) => {
-    const createdAt = new Date();
-    const client: DemoClientProject = {
-      id: nextDemoId("emp"),
-      code: null,
-      name: "",
-      document: null,
-      stateRegistration: null,
-      districtRegistration: null,
-      type: ClientProjectType.CLIENTE,
-      status: ClientProjectStatus.ATIVO,
-      notes: null,
-      accountingTaxRegime: null,
-      accountingActivity: null,
-      accountingState: null,
-      hasMonthlyMovement: true,
-      issuesInvoices: false,
-      hasRentalIrrf: false,
-      employeesCount: null,
-      modules: [...closingModules],
-      stepOverrides: {},
-      mainResponsibleUserId: null,
-      segmentId: accountingSegmentId,
-      organizationId: user.organizationId,
-      createdAt,
-      updatedAt: createdAt,
-    };
-    applyInput(client, data);
-    store.clientProjects.push(client);
-    return client.id;
+  const client = await prisma.clientProject.create({
+    data: { ...(toData(data) as Prisma.ClientProjectUncheckedCreateInput), name: data.name, organizationId: user.organizationId },
   });
 
-  revalidateCompanyPaths(id);
-  redirect(`/empresas/${id}`);
+  revalidateCompanyPaths(client.id);
+  redirect(`/empresas/${client.id}`);
 }
 
 export async function updateCompany(id: string, formData: FormData) {
@@ -92,11 +64,8 @@ export async function updateCompany(id: string, formData: FormData) {
   assertCanWrite(user.role);
   const data = parse(formData);
 
-  await mutateDemoStore((store) => {
-    const client = store.clientProjects.find((item) => item.id === id && item.organizationId === user.organizationId);
-    if (!client) throw new Error("Empresa não encontrada.");
-    applyInput(client, data);
-  });
+  const { count } = await prisma.clientProject.updateMany({ where: { id, organizationId: user.organizationId }, data: toData(data) });
+  if (!count) throw new Error("Empresa não encontrada.");
 
   revalidateCompanyPaths(id);
   redirect(`/empresas/${id}`);
@@ -106,14 +75,8 @@ export async function deleteCompany(id: string) {
   const user = await requireUser();
   if (user.role !== "ADMIN" && user.role !== "GESTOR") throw new Error("Somente admin ou gestor podem excluir empresas.");
 
-  await mutateDemoStore((store) => {
-    store.clientProjects = store.clientProjects.filter((item) => item.id !== id);
-    store.closingRows = store.closingRows.filter((item) => item.clientProjectId !== id);
-    store.closingCells = store.closingCells.filter((item) => item.clientProjectId !== id);
-    store.tasks.forEach((task) => {
-      if (task.clientProjectId === id) task.clientProjectId = null;
-    });
-  });
+  // Fechamento é apagado em cascata; tarefas avulsas ficam sem vínculo.
+  await prisma.clientProject.deleteMany({ where: { id, organizationId: user.organizationId } });
 
   revalidateCompanyPaths();
   redirect("/empresas");
@@ -130,7 +93,7 @@ export type ImportResult = {
   skipped: { line: number; reason: string }[];
 };
 
-const headerWords = ["COD", "CODIGO", "CÓDIGO", "EMPRESA", "NOME"];
+const headerWords = ["COD", "CODIGO", "EMPRESA", "NOME"];
 
 function normalizeName(value: string) {
   return value
@@ -151,6 +114,13 @@ function parseEmployees(value: string) {
   return digits ? Number(digits) : null;
 }
 
+function parseDwNf(value: string): boolean | null {
+  const flag = value.trim().toUpperCase();
+  if (["S", "SIM"].includes(flag)) return true;
+  if (["N", "NAO", "NÃO"].includes(flag)) return false;
+  return null;
+}
+
 export async function importCompanies(formData: FormData): Promise<ImportResult> {
   const user = await requireUser();
   assertCanWrite(user.role);
@@ -158,88 +128,67 @@ export async function importCompanies(formData: FormData): Promise<ImportResult>
   const lines = raw.split(/\r?\n/).filter((line) => line.trim());
   const result: ImportResult = { created: 0, updated: 0, skipped: [] };
 
-  await mutateDemoStore((store) => {
-    lines.forEach((line, index) => {
-      const lineNumber = index + 1;
-      const [code = "", name = "", document = "", stateRegistration = "", districtRegistration = "", activity = "", state = "", regime = "", employees = "", dwNf = ""] =
-        splitLine(line);
-
-      if (headerWords.includes(normalizeName(code)) || headerWords.includes(normalizeName(name))) return;
-      if (!name) {
-        result.skipped.push({ line: lineNumber, reason: "Sem nome da empresa." });
-        return;
-      }
-
-      const parsedRegime = parseTaxRegime(regime);
-      const parsedActivity = parseActivity(activity);
-      const parsedState = state.trim().toUpperCase();
-      if (!parsedRegime) {
-        result.skipped.push({ line: lineNumber, reason: `Regime não reconhecido: "${regime}".` });
-        return;
-      }
-      if (!parsedActivity) {
-        result.skipped.push({ line: lineNumber, reason: `Atividade não reconhecida: "${activity}".` });
-        return;
-      }
-      if (!brazilianStates.includes(parsedState as BrazilianState)) {
-        result.skipped.push({ line: lineNumber, reason: `UF não reconhecida: "${state}".` });
-        return;
-      }
-
-      const normalizedCode = code.replace(/\D/g, "") || null;
-      const existing =
-        store.clientProjects.find((client) => normalizedCode && client.code === normalizedCode) ??
-        store.clientProjects.find((client) => normalizeName(client.name) === normalizeName(name));
-      const now = new Date();
-      const client: DemoClientProject = existing ?? {
-        id: nextDemoId("emp"),
-        code: null,
-        name: "",
-        document: null,
-        stateRegistration: null,
-        districtRegistration: null,
-        type: ClientProjectType.CLIENTE,
-        status: ClientProjectStatus.ATIVO,
-        notes: null,
-        accountingTaxRegime: null,
-        accountingActivity: null,
-        accountingState: null,
-        hasMonthlyMovement: true,
-        issuesInvoices: false,
-        hasRentalIrrf: false,
-        employeesCount: null,
-        modules: [...closingModules],
-        stepOverrides: {},
-        mainResponsibleUserId: null,
-        segmentId: accountingSegmentId,
-        organizationId: user.organizationId,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      client.code = normalizedCode ?? client.code;
-      client.name = name;
-      client.document = onlyDigits(document) || client.document;
-      client.stateRegistration = stateRegistration || client.stateRegistration;
-      client.districtRegistration = districtRegistration || client.districtRegistration;
-      client.accountingTaxRegime = parsedRegime;
-      client.accountingActivity = parsedActivity;
-      client.accountingState = parsedState;
-      const employeesCount = parseEmployees(employees);
-      if (employeesCount !== null) client.employeesCount = employeesCount;
-      const dwNfFlag = dwNf.trim().toUpperCase();
-      if (["S", "SIM"].includes(dwNfFlag)) client.issuesInvoices = true;
-      if (["N", "NAO", "NÃO"].includes(dwNfFlag)) client.issuesInvoices = false;
-      client.updatedAt = now;
-
-      if (existing) {
-        result.updated += 1;
-      } else {
-        store.clientProjects.push(client);
-        result.created += 1;
-      }
-    });
+  const existingCompanies = await prisma.clientProject.findMany({
+    where: { organizationId: user.organizationId },
+    select: { id: true, code: true, name: true },
   });
+
+  for (const [index, line] of lines.entries()) {
+    const lineNumber = index + 1;
+    const [code = "", name = "", document = "", stateRegistration = "", districtRegistration = "", activity = "", state = "", regime = "", employees = "", dwNf = ""] =
+      splitLine(line);
+
+    if (headerWords.includes(normalizeName(code)) || headerWords.includes(normalizeName(name))) continue;
+    if (!name) {
+      result.skipped.push({ line: lineNumber, reason: "Sem nome da empresa." });
+      continue;
+    }
+
+    const parsedRegime = parseTaxRegime(regime);
+    const parsedActivity = parseActivity(activity);
+    const parsedState = state.trim().toUpperCase();
+    if (!parsedRegime) {
+      result.skipped.push({ line: lineNumber, reason: `Regime não reconhecido: "${regime}".` });
+      continue;
+    }
+    if (!parsedActivity) {
+      result.skipped.push({ line: lineNumber, reason: `Atividade não reconhecida: "${activity}".` });
+      continue;
+    }
+    if (!brazilianStates.includes(parsedState as BrazilianState)) {
+      result.skipped.push({ line: lineNumber, reason: `UF não reconhecida: "${state}".` });
+      continue;
+    }
+
+    const normalizedCode = code.replace(/\D/g, "") || null;
+    const existing =
+      existingCompanies.find((client) => normalizedCode && client.code === normalizedCode) ??
+      existingCompanies.find((client) => normalizeName(client.name) === normalizeName(name));
+    const employeesCount = parseEmployees(employees);
+    const issuesInvoices = parseDwNf(dwNf);
+
+    const shared = {
+      name,
+      accountingTaxRegime: parsedRegime,
+      accountingActivity: parsedActivity,
+      accountingState: parsedState,
+      ...(normalizedCode ? { code: normalizedCode } : {}),
+      ...(onlyDigits(document) ? { document: onlyDigits(document) } : {}),
+      ...(stateRegistration ? { stateRegistration } : {}),
+      ...(districtRegistration ? { districtRegistration } : {}),
+      ...(employeesCount !== null ? { employeesCount } : {}),
+      ...(issuesInvoices !== null ? { issuesInvoices } : {}),
+    };
+
+    if (existing) {
+      await prisma.clientProject.update({ where: { id: existing.id }, data: shared });
+      result.updated += 1;
+    } else {
+      const created = await prisma.clientProject.create({ data: { ...shared, organizationId: user.organizationId } });
+      existingCompanies.push({ id: created.id, code: created.code, name: created.name });
+      result.created += 1;
+    }
+  }
 
   revalidateCompanyPaths();
   return result;

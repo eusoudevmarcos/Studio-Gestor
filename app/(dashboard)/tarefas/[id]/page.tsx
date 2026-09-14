@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DepartmentBadge } from "@/components/badges/department-badge";
 import { PriorityBadge } from "@/components/badges/priority-badge";
-import { SegmentBadge } from "@/components/badges/segment-badge";
 import { StatusBadge } from "@/components/badges/status-badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Textarea } from "@/components/ui/textarea";
 import { createTaskComment } from "@/lib/actions/tasks";
 import { getTask } from "@/lib/data";
-import { competenceLabel } from "@/lib/closing";
 import type { RouteParams } from "@/lib/search-params";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -40,14 +38,11 @@ export default async function TaskDetailPage({ params }: { params: RouteParams<{
                 <StatusBadge status={task.status} />
                 <PriorityBadge priority={task.priority} />
                 <DepartmentBadge name={task.department.name} />
-                {task.segment ? <SegmentBadge name={task.segment.name} /> : null}
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div><span className="text-sm text-slate-500">Empresa</span><p className="font-medium">{task.clientProject?.name ?? "-"}</p></div>
                 <div><span className="text-sm text-slate-500">Responsável</span><p className="font-medium">{task.responsible?.name ?? "-"}</p></div>
                 <div><span className="text-sm text-slate-500">Vencimento</span><p className="font-medium">{formatDate(task.dueDate)}</p></div>
-                {task.competence ? <div><span className="text-sm text-slate-500">Competência</span><p className="font-medium">{competenceLabel(task.competence)}</p></div> : null}
-                <div><span className="text-sm text-slate-500">Rotina</span><p className="font-medium">{task.routine?.name ?? "Tarefa manual"}</p></div>
                 <div><span className="text-sm text-slate-500">Criado por</span><p className="font-medium">{task.createdBy?.name ?? "-"}</p></div>
                 <div><span className="text-sm text-slate-500">Concluído em</span><p className="font-medium">{formatDateTime(task.completedAt)}</p></div>
               </div>

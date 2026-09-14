@@ -10,10 +10,12 @@ type ConfirmDialogProps = {
   description: string;
   trigger: React.ReactNode;
   actionLabel?: string;
+  actionVariant?: "destructive" | "default";
   onConfirm?: () => void;
+  children?: React.ReactNode;
 };
 
-export function ConfirmDialog({ title, description, trigger, actionLabel = "Confirmar", onConfirm }: ConfirmDialogProps) {
+export function ConfirmDialog({ title, description, trigger, actionLabel = "Confirmar", actionVariant = "destructive", onConfirm, children }: ConfirmDialogProps) {
   return (
     <Dialog.Root>
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
@@ -31,12 +33,13 @@ export function ConfirmDialog({ title, description, trigger, actionLabel = "Conf
               </button>
             </Dialog.Close>
           </div>
+          {children ? <div className="mt-4">{children}</div> : null}
           <div className="mt-5 flex justify-end gap-2">
             <Dialog.Close asChild>
               <Button type="button" variant="outline">Cancelar</Button>
             </Dialog.Close>
             <Dialog.Close asChild>
-              <Button type="button" variant="destructive" onClick={onConfirm}>{actionLabel}</Button>
+              <Button type="button" variant={actionVariant} onClick={onConfirm}>{actionLabel}</Button>
             </Dialog.Close>
           </div>
         </Dialog.Content>

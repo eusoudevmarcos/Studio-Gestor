@@ -1,0 +1,27 @@
+# Blueprint do Render para o Studio Gestor.
+# O banco é o PostgreSQL já existente na conta: informe a Internal Database URL
+# com "?schema=studio_gestor" no final para isolar as tabelas do Gestor.
+services:
+  - type: web
+    name: studio-gestor
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm run render:build
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Studio Tax
+      - key: ORGANIZATION_NAME
+        value: Studio Tax

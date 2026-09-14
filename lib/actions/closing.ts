@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
+import { toProfile } from "@/lib/closing-profile";
 import {
   cellStatuses,
   closingModules,
@@ -11,7 +12,7 @@ import {
   type CellStatus,
   type ClosingModule,
 } from "@/lib/closing";
-import { mutateDemoStore, nextDemoId, type DemoClosingCell, type DemoStore } from "@/lib/demo-store";
+import { prisma } from "@/lib/prisma/client";
 
 function assertCanWrite(role: string) {
   if (role === "CONSULTA") throw new Error("Usuário de consulta não pode alterar o fechamento.");
@@ -42,52 +43,15 @@ function readDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function revalidateClosingPaths(module: ClosingModule) {
-  revalidatePath(module === "FISCAL" ? "/fiscal" : "/folha");
+function revalidateClosingPaths(closingModule: ClosingModule) {
+  revalidatePath(closingModule === "FISCAL" ? "/fiscal" : "/folha");
   revalidatePath("/dashboard");
 }
 
-function findRow(store: DemoStore, clientProjectId: string, module: ClosingModule, competence: string) {
-  return store.closingRows.find((row) => row.clientProjectId === clientProjectId && row.module === module && row.competence === competence);
-}
-
-function upsertCell(
-  store: DemoStore,
-  input: { clientProjectId: string; module: ClosingModule; competence: string; stepKey: string; status: CellStatus; note: string | null; doneAt: Date | null },
-  userId: string,
-) {
-  const now = new Date();
-  const existing = store.closingCells.find(
-    (cell) =>
-      cell.clientProjectId === input.clientProjectId &&
-      cell.module === input.module &&
-      cell.competence === input.competence &&
-      cell.stepKey === input.stepKey,
-  );
-
-  if (existing) {
-    existing.status = input.status;
-    existing.note = input.note;
-    existing.doneAt = input.doneAt;
-    existing.updatedById = userId;
-    existing.updatedAt = now;
-    return existing;
-  }
-
-  const cell: DemoClosingCell = {
-    id: nextDemoId("cel"),
-    clientProjectId: input.clientProjectId,
-    module: input.module,
-    competence: input.competence,
-    stepKey: input.stepKey,
-    status: input.status,
-    note: input.note,
-    doneAt: input.doneAt,
-    updatedById: userId,
-    updatedAt: now,
-  };
-  store.closingCells.push(cell);
-  return cell;
+async function findCompany(id: string, organizationId: string) {
+  const client = await prisma.clientProject.findFirst({ where: { id, organizationId } });
+  if (!client) throw new Error("Empresa não encontrada.");
+  return client;
 }
 
 export type SaveCellInput = {
@@ -109,13 +73,14 @@ export async function saveClosingCell(input: SaveCellInput) {
   const stepKey = String(input.stepKey ?? "");
   if (!closingSteps[closingModule].some((step) => step.key === stepKey)) throw new Error("Etapa inválida.");
 
-  await mutateDemoStore((store) => {
-    const client = store.clientProjects.find((item) => item.id === input.clientProjectId);
-    if (!client) throw new Error("Empresa não encontrada.");
+  const client = await findCompany(input.clientProjectId, user.organizationId);
+  const note = String(input.note ?? "").trim() || null;
+  const doneAt = status === "OK" ? (readDate(input.doneAt) ?? new Date()) : readDate(input.doneAt);
 
-    const note = String(input.note ?? "").trim() || null;
-    const doneAt = status === "OK" ? (readDate(input.doneAt) ?? new Date()) : readDate(input.doneAt);
-    upsertCell(store, { clientProjectId: client.id, module: closingModule, competence, stepKey, status, note, doneAt }, user.id);
+  await prisma.closingCell.upsert({
+    where: { clientProjectId_module_competence_stepKey: { clientProjectId: client.id, module: closingModule, competence, stepKey } },
+    update: { status, note, doneAt, updatedById: user.id },
+    create: { organizationId: user.organizationId, clientProjectId: client.id, module: closingModule, competence, stepKey, status, note, doneAt, updatedById: user.id },
   });
 
   revalidateClosingPaths(closingModule);
@@ -134,36 +99,23 @@ export async function saveClosingRow(input: SaveRowInput) {
   assertCanWrite(user.role);
   const closingModule = readModule(input.module);
   const competence = readCompetence(input.competence);
+  const client = await findCompany(input.clientProjectId, user.organizationId);
+  const note = String(input.note ?? "").trim() || null;
 
-  await mutateDemoStore((store) => {
-    const client = store.clientProjects.find((item) => item.id === input.clientProjectId);
-    if (!client) throw new Error("Empresa não encontrada.");
-
-    const now = new Date();
-    const note = String(input.note ?? "").trim() || null;
-    const noMovement = input.noMovement === undefined ? undefined : input.noMovement;
-    const row = findRow(store, client.id, closingModule, competence);
-
-    if (row) {
-      row.note = note;
-      if (noMovement !== undefined) row.noMovement = noMovement;
-      row.updatedById = user.id;
-      row.updatedAt = now;
-    } else {
-      store.closingRows.push({
-        id: nextDemoId("row"),
-        clientProjectId: client.id,
-        module: closingModule,
-        competence,
-        noMovement: noMovement ?? null,
-        note,
-        updatedById: user.id,
-        updatedAt: now,
-      });
-    }
-
-    // Células nunca editadas não são armazenadas, então passam a refletir o novo padrão
-    // ("S. Mov." ou pendente) automaticamente; as editadas à mão são preservadas.
+  // Células nunca editadas não são armazenadas, então passam a refletir o novo padrão
+  // ("S. Mov." ou pendente) automaticamente; as editadas à mão são preservadas.
+  await prisma.closingRow.upsert({
+    where: { clientProjectId_module_competence: { clientProjectId: client.id, module: closingModule, competence } },
+    update: { note, ...(input.noMovement === undefined ? {} : { noMovement: input.noMovement }), updatedById: user.id },
+    create: {
+      organizationId: user.organizationId,
+      clientProjectId: client.id,
+      module: closingModule,
+      competence,
+      noMovement: input.noMovement ?? null,
+      note,
+      updatedById: user.id,
+    },
   });
 
   revalidateClosingPaths(closingModule);
@@ -176,37 +128,50 @@ export type BulkRowInput = {
   action: "CONCLUIR" | "REABRIR";
 };
 
-// Conclui todas as etapas pendentes da linha (ou reabre todas as concluídas).
+// Conclui todas as etapas pendentes da linha (ou volta todas ao padrão do perfil).
 export async function bulkClosingRow(input: BulkRowInput) {
   const user = await requireUser();
   assertCanWrite(user.role);
   const closingModule = readModule(input.module);
   const competence = readCompetence(input.competence);
+  const client = await findCompany(input.clientProjectId, user.organizationId);
+  const profile = toProfile(client);
 
-  await mutateDemoStore((store) => {
-    const client = store.clientProjects.find((item) => item.id === input.clientProjectId);
-    if (!client) throw new Error("Empresa não encontrada.");
-    const row = findRow(store, client.id, closingModule, competence);
-    const now = new Date();
+  const [row, storedCells] = await Promise.all([
+    prisma.closingRow.findUnique({ where: { clientProjectId_module_competence: { clientProjectId: client.id, module: closingModule, competence } } }),
+    prisma.closingCell.findMany({ where: { clientProjectId: client.id, module: closingModule, competence } }),
+  ]);
+  const now = new Date();
 
-    closingSteps[closingModule].forEach((step) => {
-      const resolution = resolveStep(client, closingModule, step.key, competence, { noMovement: row?.noMovement });
-      if (!resolution.applicable) return;
+  for (const step of closingSteps[closingModule]) {
+    const resolution = resolveStep(profile, closingModule, step.key, competence, { noMovement: row?.noMovement });
+    if (!resolution.applicable) continue;
 
-      const stored = store.closingCells.find(
-        (cell) => cell.clientProjectId === client.id && cell.module === closingModule && cell.competence === competence && cell.stepKey === step.key,
-      );
-      const currentStatus = stored?.status ?? resolution.defaultStatus;
+    const stored = storedCells.find((cell) => cell.stepKey === step.key);
+    const currentStatus = stored?.status ?? resolution.defaultStatus;
 
-      if (input.action === "CONCLUIR" && (currentStatus === "PENDENTE" || currentStatus === "ATENCAO")) {
-        upsertCell(store, { clientProjectId: client.id, module: closingModule, competence, stepKey: step.key, status: "OK", note: stored?.note ?? null, doneAt: now }, user.id);
-      }
+    if (input.action === "CONCLUIR" && (currentStatus === "PENDENTE" || currentStatus === "ATENCAO")) {
+      await prisma.closingCell.upsert({
+        where: { clientProjectId_module_competence_stepKey: { clientProjectId: client.id, module: closingModule, competence, stepKey: step.key } },
+        update: { status: "OK", doneAt: now, updatedById: user.id },
+        create: {
+          organizationId: user.organizationId,
+          clientProjectId: client.id,
+          module: closingModule,
+          competence,
+          stepKey: step.key,
+          status: "OK",
+          note: null,
+          doneAt: now,
+          updatedById: user.id,
+        },
+      });
+    }
 
-      if (input.action === "REABRIR" && stored && stored.status !== resolution.defaultStatus) {
-        store.closingCells = store.closingCells.filter((cell) => cell.id !== stored.id);
-      }
-    });
-  });
+    if (input.action === "REABRIR" && stored) {
+      await prisma.closingCell.delete({ where: { id: stored.id } });
+    }
+  }
 
   revalidateClosingPaths(closingModule);
 }

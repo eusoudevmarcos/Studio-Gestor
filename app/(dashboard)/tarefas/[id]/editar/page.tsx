@@ -21,17 +21,13 @@ export default async function EditTaskPage({ params }: { params: RouteParams<{ i
           <TaskForm
             action={updateTask.bind(null, task.id)}
             clients={options.clientProjects}
-            segments={options.segments}
             departments={options.departments}
             users={options.users}
-            routines={options.routines}
             defaultValues={{
               title: task.title,
               description: task.description ?? "",
               clientProjectId: task.clientProjectId ?? "",
-              segmentId: task.segmentId ?? "",
               departmentId: task.departmentId,
-              routineId: task.routineId ?? "",
               responsibleId: task.responsibleId ?? "",
               dueDate: toDateInputValue(task.dueDate),
               status: task.status,

@@ -15,19 +15,17 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError, type FormAction, toFormData } from "@/components/forms/form-utils";
 
-type Option = { id: string; name: string | null; email?: string };
+type Option = { id: string; name: string | null; email?: string; code?: string | null };
 
 type TaskFormProps = {
   action: FormAction;
   clients: Option[];
-  segments: Option[];
   departments: Option[];
   users: Option[];
-  routines: Option[];
   defaultValues?: Partial<Omit<TaskInput, "dueDate">> & { dueDate?: string | Date };
 };
 
-export function TaskForm({ action, clients, segments, departments, users, routines, defaultValues }: TaskFormProps) {
+export function TaskForm({ action, clients, departments, users, defaultValues }: TaskFormProps) {
   const [pending, startTransition] = useTransition();
   const form = useForm<z.input<typeof taskSchema>, unknown, TaskInput>({
     resolver: zodResolver(taskSchema),
@@ -35,9 +33,7 @@ export function TaskForm({ action, clients, segments, departments, users, routin
       title: "",
       description: "",
       clientProjectId: "",
-      segmentId: "",
       departmentId: "",
-      routineId: "",
       responsibleId: "",
       dueDate: new Date(),
       status: "PENDENTE",
@@ -66,16 +62,7 @@ export function TaskForm({ action, clients, segments, departments, users, routin
           <Select id="clientProjectId" {...form.register("clientProjectId")}>
             <option value="">Sem vínculo</option>
             {clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="segmentId">Segmento</Label>
-          <Select id="segmentId" {...form.register("segmentId")}>
-            <option value="">Sem segmento</option>
-            {segments.map((segment) => (
-              <option key={segment.id} value={segment.id}>{segment.name}</option>
+              <option key={client.id} value={client.id}>{client.code ? `${client.code} · ` : ""}{client.name}</option>
             ))}
           </Select>
         </div>
@@ -88,15 +75,6 @@ export function TaskForm({ action, clients, segments, departments, users, routin
             ))}
           </Select>
           <FieldError message={form.formState.errors.departmentId?.message} />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="routineId">Rotina</Label>
-          <Select id="routineId" {...form.register("routineId")}>
-            <option value="">Tarefa manual</option>
-            {routines.map((routine) => (
-              <option key={routine.id} value={routine.id}>{routine.name}</option>
-            ))}
-          </Select>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="responsibleId">Responsável</Label>

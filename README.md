@@ -44,64 +44,68 @@ Exceções por empresa: `Editar empresa → Avançado` permite forçar "sempre a
 
 - Next.js 16 (App Router) + React 19 + TypeScript
 - Tailwind CSS 4 + componentes locais estilo shadcn/ui
-- Prisma ORM + PostgreSQL (schema pronto; ver "Persistência")
-- Auth.js/NextAuth com credenciais (preparado, desligado no modo local)
+- Prisma ORM + PostgreSQL
+- NextAuth (credenciais) com senha bcrypt; só entra quem está cadastrado em **Equipe**
 - Zod, React Hook Form, date-fns, Lucide
 
-## Rodando
+## Rodando localmente
+
+Precisa de um PostgreSQL (Docker: `docker run -d --name sg-postgres -e POSTGRES_PASSWORD=sgtest -e POSTGRES_DB=studiotax -p 5433:5432 postgres:16-alpine`).
 
 ```bash
 npm install
+cp .env.example .env      # preencha DATABASE_URL, NEXTAUTH_SECRET, ADMIN_EMAIL e ADMIN_PASSWORD
+npx prisma migrate deploy # cria as tabelas no schema studio_gestor
+npm run db:seed           # organização, setores e administrador principal
 npm run dev
 ```
 
-Abra `http://localhost:3000`. No primeiro acesso o sistema cria a organização e os usuários iniciais; cadastre ou importe as empresas.
+Abra `http://localhost:3000`, entre com o e-mail/senha de `ADMIN_EMAIL`/`ADMIN_PASSWORD` e importe as empresas em **Empresas → Importar da planilha**.
 
-## Persistência
+## Deploy no Render (com o PostgreSQL que já existe)
 
-Hoje o sistema roda em **modo local**: os dados ficam em `.demo/studio-gestor-data.json` (ignorado pelo Git), sem login. Isso serve para uso em uma máquina; **na Vercel o arquivo vai para `/tmp` e é perdido a cada deploy**.
+1. **Render → New → Blueprint** apontando para este repositório (usa o `render.yaml`), ou **New → Web Service** com Build Command `npm run render:build` e Start Command `npm start`.
+2. Variáveis de ambiente do serviço:
+   - `DATABASE_URL`: a **Internal Database URL** do PostgreSQL existente + `?schema=studio_gestor` no final. O Gestor cria e usa só esse schema; nada do site é tocado. (Se o banco estiver em outra região, use a External Database URL.)
+   - `NEXTAUTH_SECRET`: gerado pelo blueprint (ou `openssl rand -base64 32`).
+   - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: o acesso principal. É criado automaticamente no primeiro deploy/login; depois disso a senha pode ser trocada em Configurações e a variável pode ser removida.
+   - `NEXTAUTH_URL` não é necessária no Render (usa `RENDER_EXTERNAL_URL`); defina apenas se usar domínio próprio.
+3. O build roda `prisma migrate deploy` — a cada deploy as migrações pendentes são aplicadas.
+4. No site da Studio Tax, o botão **Login** aponta para a URL do serviço (`NEXT_PUBLIC_GESTOR_URL`).
 
-Para uso pela equipe em produção, o próximo passo é ligar o PostgreSQL: o `prisma/schema.prisma` já contém `ClientProject` (empresa), `ClosingRow` e `ClosingCell`, e todo acesso a dados passa por `lib/data.ts` e `lib/actions/*`.
+## Acesso e equipe
 
-```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
-AUTH_SECRET="gere-um-segredo-forte"
-AUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="mesmo-valor-do-auth-secret"
-NEXTAUTH_URL="http://localhost:3000"
-```
-
-```bash
-npm run prisma:migrate
-npm run db:seed
-```
-
-Login do seed: `admin@studiogestor.com` / `Studio@123`.
+- Não há cadastro público. O administrador cria cada colaborador em **Equipe** (nome, e-mail, perfil, setor e senha inicial) e pode redefinir senhas.
+- Cada usuário troca a própria senha em **Configurações**.
+- Usuários inativos não conseguem entrar; sempre resta pelo menos um admin ativo.
 
 ## Estrutura
 
 ```txt
+app/(auth)/login         tela de login
 app/(dashboard)/
-  dashboard        painel do fechamento
-  empresas         lista, cadastro, detalhe, importação
-  fiscal, folha    matriz por competência
+  dashboard              painel do fechamento
+  empresas               lista, cadastro, detalhe, importação
+  fiscal, folha          matriz por competência
   tarefas, calendario, equipe, configuracoes
-components/closing/  matriz (client), página compartilhada, estilos das células
-lib/closing.ts       módulos, etapas, status e regras de aplicabilidade
-lib/data.ts          leitura (board, resumo, empresas, tarefas)
-lib/actions/         companies.ts (CRUD + importação), closing.ts (células/linhas)
-lib/demo-store.ts    armazenamento local (JSON) e seed
-prisma/              schema e seed para PostgreSQL
+components/closing/      matriz (client), página compartilhada, estilos das células
+lib/closing.ts           módulos, etapas, status e regras de aplicabilidade
+lib/data.ts              leitura (board, resumo, empresas, tarefas, equipe)
+lib/actions/             companies.ts, closing.ts, tasks.ts, users.ts
+lib/auth/                NextAuth, sessão, bootstrap do admin
+proxy.ts                 bloqueio de rotas sem login
+prisma/                  schema, migrações e seed
 ```
 
 ## Perfis
 
-- `ADMIN` / `GESTOR`: tudo, inclusive excluir empresas.
+- `ADMIN`: tudo, inclusive equipe e senhas.
+- `GESTOR`: tudo, exceto gerenciar a equipe.
 - `COORDENADOR` / `COLABORADOR`: cadastram empresas e marcam o fechamento.
 - `CONSULTA`: somente visualização.
 
 ## Próximos passos
 
-- Ligar PostgreSQL + login para uso multiusuário.
 - Módulo Contábil na mesma matriz.
-- Histórico por célula e relatório de fechamento por competência (exportação).
+- Histórico por célula e exportação do fechamento por competência.
+- Domínio próprio (ex.: gestor.studiotax.com.br) no Render.

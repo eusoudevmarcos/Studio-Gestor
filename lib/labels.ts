@@ -1,6 +1,5 @@
 import type {
   ClientProjectStatus,
-  RoutineRecurrence,
   TaskPriority,
   TaskStatus,
   UserRole,
@@ -20,16 +19,6 @@ export const clientProjectStatusLabels: Record<ClientProjectStatus, string> = {
   EM_IMPLANTACAO: "Em implantação",
   PAUSADO: "Pausada",
   ENCERRADO: "Encerrada",
-};
-
-export const recurrenceLabels: Record<RoutineRecurrence, string> = {
-  UNICA: "Única",
-  DIARIA: "Diária",
-  SEMANAL: "Semanal",
-  MENSAL: "Mensal",
-  TRIMESTRAL: "Trimestral",
-  SEMESTRAL: "Semestral",
-  ANUAL: "Anual",
 };
 
 export const taskStatusLabels: Record<TaskStatus, string> = {

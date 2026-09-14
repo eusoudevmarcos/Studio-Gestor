@@ -9,16 +9,14 @@ export default async function NewTaskPage() {
 
   return (
     <div className="mx-auto grid max-w-5xl gap-5">
-      <PageHeader title="Nova tarefa" description="Crie uma entrega manual vinculada a setor, responsável, prazo e empresa." />
+      <PageHeader title="Nova tarefa" description="Demanda fora da rotina fixa, com setor, responsável, prazo e empresa." />
       <Card>
         <CardContent>
           <TaskForm
             action={createTask}
             clients={options.clientProjects}
-            segments={options.segments}
             departments={options.departments}
             users={options.users}
-            routines={options.routines}
           />
         </CardContent>
       </Card>
