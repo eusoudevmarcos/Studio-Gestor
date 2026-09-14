@@ -26,13 +26,13 @@ export default async function ReportsPage() {
 
   return (
     <div className="grid gap-5">
-      <PageHeader title="Relatórios" description="Indicadores básicos de tarefas por status, setor, segmento, responsável e cliente/projeto." actionIcon={BarChart3} />
+      <PageHeader title="Relatórios" description="Indicadores básicos de tarefas por status, setor, segmento, responsável e empresa." actionIcon={BarChart3} />
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         <Card><CardHeader><CardTitle>Tarefas por status</CardTitle></CardHeader><CardContent><ReportList rows={data.byStatus} /></CardContent></Card>
         <Card><CardHeader><CardTitle>Tarefas por setor</CardTitle></CardHeader><CardContent><ReportList rows={data.byDepartment} /></CardContent></Card>
         <Card><CardHeader><CardTitle>Tarefas por segmento</CardTitle></CardHeader><CardContent><ReportList rows={data.bySegment} /></CardContent></Card>
         <Card><CardHeader><CardTitle>Tarefas por responsável</CardTitle></CardHeader><CardContent><ReportList rows={data.byResponsible} /></CardContent></Card>
-        <Card><CardHeader><CardTitle>Atrasadas por cliente/projeto</CardTitle></CardHeader><CardContent><ReportList rows={data.overdueByClient} /></CardContent></Card>
+        <Card><CardHeader><CardTitle>Atrasadas por empresa</CardTitle></CardHeader><CardContent><ReportList rows={data.overdueByClient} /></CardContent></Card>
       </section>
       <Card>
         <CardHeader><CardTitle>Concluídas no mês</CardTitle></CardHeader>
@@ -42,7 +42,7 @@ export default async function ReportsPage() {
               <Link key={task.id} href={`/tarefas/${task.id}`} className="grid gap-3 rounded-md border border-slate-100 p-3 hover:bg-slate-50 md:grid-cols-[1fr_auto]">
                 <div>
                   <p className="font-medium text-slate-950">{task.title}</p>
-                  <p className="mt-1 text-sm text-slate-500">{task.clientProject?.name ?? "Sem cliente/projeto"} · {task.department.name}</p>
+                  <p className="mt-1 text-sm text-slate-500">{task.clientProject?.name ?? "Sem empresa"} · {task.department.name}</p>
                 </div>
                 <span className="text-sm text-slate-500">{formatDate(task.completedAt)}</span>
               </Link>

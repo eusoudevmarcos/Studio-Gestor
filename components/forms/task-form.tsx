@@ -62,7 +62,7 @@ export function TaskForm({ action, clients, segments, departments, users, routin
           <FieldError message={form.formState.errors.title?.message} />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="clientProjectId">Cliente/Projeto</Label>
+          <Label htmlFor="clientProjectId">Empresa</Label>
           <Select id="clientProjectId" {...form.register("clientProjectId")}>
             <option value="">Sem vínculo</option>
             {clients.map((client) => (

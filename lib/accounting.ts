@@ -1,8 +1,5 @@
-import { getFiscalObligationLines } from "@/lib/fiscal-routines";
-
 export const accountingTaxRegimes = ["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "IMUNE_ISENTA"] as const;
 export const accountingActivities = ["COMERCIO", "SERVICO", "COMERCIO_SERVICO"] as const;
-export const accountingInvoiceModels = ["NFE", "NFCE", "NFSE_PREFEITURA", "NFSE_NACIONAL"] as const;
 export const brazilianStates = [
   "AC",
   "AL",
@@ -35,7 +32,6 @@ export const brazilianStates = [
 
 export type AccountingTaxRegime = (typeof accountingTaxRegimes)[number];
 export type AccountingActivity = (typeof accountingActivities)[number];
-export type AccountingInvoiceModel = (typeof accountingInvoiceModels)[number];
 export type BrazilianState = (typeof brazilianStates)[number];
 
 export const accountingTaxRegimeLabels: Record<AccountingTaxRegime, string> = {
@@ -46,40 +42,78 @@ export const accountingTaxRegimeLabels: Record<AccountingTaxRegime, string> = {
   IMUNE_ISENTA: "Imune/Isenta",
 };
 
+// Siglas usadas na planilha do escritório (coluna REGIME).
+export const accountingTaxRegimeShortLabels: Record<AccountingTaxRegime, string> = {
+  SIMPLES_NACIONAL: "SN",
+  LUCRO_PRESUMIDO: "LP",
+  LUCRO_REAL: "LR",
+  MEI: "MEI",
+  IMUNE_ISENTA: "IMUNE",
+};
+
 export const accountingActivityLabels: Record<AccountingActivity, string> = {
-  COMERCIO: "Com\u00e9rcio",
-  SERVICO: "Servi\u00e7o",
-  COMERCIO_SERVICO: "Com\u00e9rcio e servi\u00e7o",
+  COMERCIO: "Comércio (ICMS)",
+  SERVICO: "Serviço (ISS)",
+  COMERCIO_SERVICO: "Comércio e serviço (ICMS/ISS)",
 };
 
-export const accountingInvoiceModelLabels: Record<AccountingInvoiceModel, string> = {
-  NFE: "NF-e",
-  NFCE: "NFC-e",
-  NFSE_PREFEITURA: "NFS-e prefeitura",
-  NFSE_NACIONAL: "NFS-e nacional",
+// Siglas usadas na planilha do escritório (coluna ATIV).
+export const accountingActivityShortLabels: Record<AccountingActivity, string> = {
+  COMERCIO: "ICMS",
+  SERVICO: "ISS",
+  COMERCIO_SERVICO: "ICMS/ISS",
 };
 
-export type AccountingProfile = {
-  accountingTaxRegime?: AccountingTaxRegime | null;
-  accountingActivity?: AccountingActivity | null;
-  accountingState?: string | null;
-  hasRentalIrrf?: boolean | null;
-  hasMonthlyMovement?: boolean | null;
-  issuesInvoices?: boolean | null;
-  invoiceModels?: AccountingInvoiceModel[] | null;
+const regimeAliases: Record<string, AccountingTaxRegime> = {
+  SN: "SIMPLES_NACIONAL",
+  SIMPLES: "SIMPLES_NACIONAL",
+  "SIMPLES NACIONAL": "SIMPLES_NACIONAL",
+  SIMPLES_NACIONAL: "SIMPLES_NACIONAL",
+  LP: "LUCRO_PRESUMIDO",
+  PRESUMIDO: "LUCRO_PRESUMIDO",
+  "LUCRO PRESUMIDO": "LUCRO_PRESUMIDO",
+  LUCRO_PRESUMIDO: "LUCRO_PRESUMIDO",
+  LR: "LUCRO_REAL",
+  REAL: "LUCRO_REAL",
+  "LUCRO REAL": "LUCRO_REAL",
+  LUCRO_REAL: "LUCRO_REAL",
+  MEI: "MEI",
+  IMUNE: "IMUNE_ISENTA",
+  ISENTA: "IMUNE_ISENTA",
+  "IMUNE/ISENTA": "IMUNE_ISENTA",
+  IMUNE_ISENTA: "IMUNE_ISENTA",
 };
 
-function normalize(value?: string | null) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+const activityAliases: Record<string, AccountingActivity> = {
+  ICMS: "COMERCIO",
+  COMERCIO: "COMERCIO",
+  "COMÉRCIO": "COMERCIO",
+  ISS: "SERVICO",
+  SERVICO: "SERVICO",
+  "SERVIÇO": "SERVICO",
+  "ICMS/ISS": "COMERCIO_SERVICO",
+  "ISS/ICMS": "COMERCIO_SERVICO",
+  "ICMS-ISS": "COMERCIO_SERVICO",
+  COMERCIO_SERVICO: "COMERCIO_SERVICO",
+  AMBOS: "COMERCIO_SERVICO",
+};
+
+export function parseTaxRegime(value: string | null | undefined): AccountingTaxRegime | null {
+  const key = (value ?? "").trim().toUpperCase();
+  return regimeAliases[key] ?? null;
 }
 
-export function isAccountingSegmentName(name?: string | null) {
-  return normalize(name).includes("contabilidade");
+export function parseActivity(value: string | null | undefined): AccountingActivity | null {
+  const key = (value ?? "").trim().toUpperCase();
+  return activityAliases[key] ?? null;
 }
 
-export function getAccountingObligations(profile: AccountingProfile) {
-  return getFiscalObligationLines(profile);
+export function onlyDigits(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+export function formatCnpj(value: string | null | undefined) {
+  const digits = onlyDigits(value);
+  if (digits.length !== 14) return value?.trim() || "-";
+  return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 }

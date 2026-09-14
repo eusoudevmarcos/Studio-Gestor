@@ -23,10 +23,10 @@ export default async function SettingsPage() {
         <Card>
           <CardHeader><CardTitle>Ambiente</CardTitle></CardHeader>
           <CardContent className="grid gap-3 text-sm">
-            <div><span className="text-slate-500">Banco</span><p className="font-medium text-slate-950">PostgreSQL via Prisma</p></div>
-            <div><span className="text-slate-500">Autenticação</span><p className="font-medium text-slate-950">Auth.js com credenciais</p></div>
+            <div><span className="text-slate-500">Armazenamento</span><p className="font-medium text-slate-950">Modo local (.demo/studio-gestor-data.json) · PostgreSQL preparado via Prisma</p></div>
+            <div><span className="text-slate-500">Autenticação</span><p className="font-medium text-slate-950">Desligada no modo local · Auth.js com credenciais preparado</p></div>
             <div><span className="text-slate-500">Variáveis</span><p className="font-medium text-slate-950">DATABASE_URL, AUTH_SECRET, AUTH_URL</p></div>
-            <div><span className="text-slate-500">Próximas evoluções</span><p className="font-medium text-slate-950">Convites, auditoria avançada e integrações externas</p></div>
+            <div><span className="text-slate-500">Próximas evoluções</span><p className="font-medium text-slate-950">PostgreSQL + login multiusuário, módulo Contábil, exportação do fechamento</p></div>
           </CardContent>
         </Card>
       </section>

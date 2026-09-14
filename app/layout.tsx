@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Studio Gestor",
-  description: "Gestão operacional de rotinas, tarefas, setores e prazos.",
+  description: "Controle de fechamento fiscal e folha do escritório contábil.",
 };
 
 export default function RootLayout({

@@ -34,7 +34,7 @@ export function ClientProjectFilters({ segments }: { segments: Option[] }) {
 export function TaskFilters({ segments, departments, users, clients }: { segments: Option[]; departments: Option[]; users: Option[]; clients: Option[] }) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:grid-cols-[1fr_repeat(5,170px)_auto]">
-      <Input name="q" placeholder="Buscar tarefa, cliente/projeto ou descrição" />
+      <Input name="q" placeholder="Buscar tarefa, empresa ou descrição" />
       <Select name="status" defaultValue="">
         <option value="">Status</option>
         {taskStatuses.map((status) => (
@@ -60,7 +60,7 @@ export function TaskFilters({ segments, departments, users, clients }: { segment
         ))}
       </Select>
       <Select name="clientProjectId" defaultValue="">
-        <option value="">Cliente/Projeto</option>
+        <option value="">Empresa</option>
         {clients.map((client) => (
           <option key={client.id} value={client.id}>{client.name}</option>
         ))}

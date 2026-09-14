@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BriefcaseBusiness, CalendarDays, ClipboardList, Gauge, ReceiptText, Settings } from "lucide-react";
+import { Building2, ClipboardList, Gauge, ReceiptText, Settings, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const mobileItems = [
   { href: "/dashboard", label: "Painel", icon: Gauge },
-  { href: "/tarefas", label: "Tarefas", icon: ClipboardList },
-  { href: "/clientes", label: "Clientes", icon: BriefcaseBusiness },
   { href: "/fiscal", label: "Fiscal", icon: ReceiptText },
-  { href: "/calendario", label: "Agenda", icon: CalendarDays },
+  { href: "/folha", label: "Folha", icon: UsersRound },
+  { href: "/empresas", label: "Empresas", icon: Building2 },
+  { href: "/tarefas", label: "Tarefas", icon: ClipboardList },
   { href: "/configuracoes", label: "Mais", icon: Settings },
 ];
 

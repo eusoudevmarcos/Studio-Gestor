@@ -46,11 +46,18 @@ enum AccountingActivity {
   COMERCIO_SERVICO
 }
 
-enum AccountingInvoiceModel {
-  NFE
-  NFCE
-  NFSE_PREFEITURA
-  NFSE_NACIONAL
+enum ClosingModule {
+  FISCAL
+  FOLHA
+}
+
+enum ClosingCellStatus {
+  NAO_APLICA
+  PENDENTE
+  OK
+  SEM_MOVIMENTO
+  NAO_DEVIDO
+  ATENCAO
 }
 
 enum RoutineRecurrence {
@@ -95,6 +102,8 @@ model Organization {
   routines       Routine[]
   tasks          Task[]
   notifications  Notification[]
+  closingRows    ClosingRow[]
+  closingCells   ClosingCell[]
 
   @@index([createdAt])
 }
@@ -122,6 +131,8 @@ model User {
   comments           TaskComment[]
   histories          TaskHistory[]
   notifications      Notification[]
+  closingRows        ClosingRow[]
+  closingCells       ClosingCell[]
 
   @@index([organizationId])
   @@index([departmentId])
@@ -207,33 +218,41 @@ model Department {
 }
 
 model ClientProject {
-  id                    String                   @id @default(cuid())
+  id                    String               @id @default(cuid())
+  code                  String?
   name                  String
   document              String?
-  type                  ClientProjectType        @default(CLIENTE)
-  status                ClientProjectStatus      @default(ATIVO)
+  stateRegistration     String?
+  districtRegistration  String?
+  type                  ClientProjectType    @default(CLIENTE)
+  status                ClientProjectStatus  @default(ATIVO)
   notes                 String?
   accountingTaxRegime   AccountingTaxRegime?
   accountingActivity    AccountingActivity?
   accountingState       String?
   hasMonthlyMovement    Boolean?
-  issuesInvoices        Boolean                  @default(false)
-  invoiceModels         AccountingInvoiceModel[] @default([])
-  hasRentalIrrf         Boolean                  @default(false)
+  issuesInvoices        Boolean              @default(false)
+  hasRentalIrrf         Boolean              @default(false)
+  employeesCount        Int?
+  modules               ClosingModule[]      @default([FISCAL, FOLHA])
+  stepOverrides         Json                 @default("{}")
   mainResponsibleUserId String?
   segmentId             String?
   organizationId        String
-  createdAt             DateTime                 @default(now())
-  updatedAt             DateTime                 @updatedAt
-  organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  segment               Segment?                 @relation(fields: [segmentId], references: [id], onDelete: SetNull)
-  mainResponsible       User?                    @relation("ClientProjectMainResponsible", fields: [mainResponsibleUserId], references: [id], onDelete: SetNull)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  segment               Segment?             @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  mainResponsible       User?                @relation("ClientProjectMainResponsible", fields: [mainResponsibleUserId], references: [id], onDelete: SetNull)
   tasks                 Task[]
+  closingRows           ClosingRow[]
+  closingCells          ClosingCell[]
 
   @@index([organizationId])
   @@index([segmentId])
   @@index([status])
   @@index([type])
+  @@index([code])
   @@index([accountingTaxRegime])
   @@index([accountingActivity])
   @@index([accountingState])
@@ -360,4 +379,47 @@ model Notification {
   @@index([organizationId])
   @@index([readAt])
   @@index([createdAt])
+}
+
+// Linha da matriz de fechamento (empresa x módulo x competência).
+model ClosingRow {
+  id              String        @id @default(cuid())
+  organizationId  String
+  clientProjectId String
+  module          ClosingModule
+  competence      String
+  noMovement      Boolean?
+  note            String?
+  updatedById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientProject   ClientProject @relation(fields: [clientProjectId], references: [id], onDelete: Cascade)
+  updatedBy       User?         @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientProjectId, module, competence])
+  @@index([organizationId, module, competence])
+}
+
+// Célula editada da matriz. Células não editadas são derivadas do perfil da empresa.
+model ClosingCell {
+  id              String            @id @default(cuid())
+  organizationId  String
+  clientProjectId String
+  module          ClosingModule
+  competence      String
+  stepKey         String
+  status          ClosingCellStatus @default(PENDENTE)
+  note            String?
+  doneAt          DateTime?
+  updatedById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientProject   ClientProject     @relation(fields: [clientProjectId], references: [id], onDelete: Cascade)
+  updatedBy       User?             @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientProjectId, module, competence, stepKey])
+  @@index([organizationId, module, competence])
+  @@index([status])
 }

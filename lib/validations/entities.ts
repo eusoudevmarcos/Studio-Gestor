@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { accountingActivities, accountingInvoiceModels, accountingTaxRegimes } from "@/lib/accounting";
+import { accountingActivities, accountingTaxRegimes, brazilianStates } from "@/lib/accounting";
+import { closingModules, stepOverrideValues } from "@/lib/closing";
 
 export const userRoles = ["ADMIN", "GESTOR", "COORDENADOR", "COLABORADOR", "CONSULTA"] as const;
-export const clientProjectTypes = ["CLIENTE", "PROJETO", "EMPRESA", "CANDIDATO", "PROCESSO", "OUTRO"] as const;
 export const clientProjectStatuses = ["ATIVO", "INATIVO", "EM_IMPLANTACAO", "PAUSADO", "ENCERRADO"] as const;
 export const routineRecurrences = ["UNICA", "DIARIA", "SEMANAL", "MENSAL", "TRIMESTRAL", "SEMESTRAL", "ANUAL"] as const;
 export const taskStatuses = [
@@ -29,24 +29,38 @@ const optionalId = z
   .optional()
   .transform((value) => (value ? value : undefined));
 
+// Checkbox com valor padrão verdadeiro quando ausente do formulário.
 const checkboxBoolean = z
   .union([z.boolean(), z.literal("true"), z.literal("false"), z.literal("on")])
   .optional()
   .transform((value) => value === undefined || value === true || value === "true" || value === "on");
 
-const optionalBoolean = z
+// Checkbox que só é verdadeiro quando marcado (sem valor = false).
+const strictCheckbox = z
   .union([z.boolean(), z.literal("true"), z.literal("false"), z.literal("on"), z.literal("")])
   .optional()
-  .transform((value) => {
-    if (value === undefined || value === "") return undefined;
-    return value === true || value === "true" || value === "on";
-  });
+  .transform((value) => value === true || value === "true" || value === "on");
 
-const invoiceModelsSchema = z.preprocess((value) => {
+const optionalInteger = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().int().min(0).max(100000).optional(),
+);
+
+const modulesSchema = z.preprocess((value) => {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") return value ? value.split(",").filter(Boolean) : [];
   return [];
-}, z.array(z.enum(accountingInvoiceModels)));
+}, z.array(z.enum(closingModules)));
+
+const stepOverridesSchema = z.preprocess((value) => {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}, z.record(z.string(), z.enum(stepOverrideValues)));
 
 export const segmentSchema = z.object({
   name: z.string().trim().min(2, "Informe o nome do segmento"),
@@ -61,24 +75,24 @@ export const departmentSchema = z.object({
   active: checkboxBoolean.default(true),
 });
 
-export const clientProjectSchema = z.object({
-  name: z.string().trim().min(2, "Informe o nome"),
+export const companySchema = z.object({
+  code: optionalString,
+  name: z.string().trim().min(2, "Informe o nome da empresa"),
   document: optionalString,
-  type: z.enum(clientProjectTypes),
+  stateRegistration: optionalString,
+  districtRegistration: optionalString,
   status: z.enum(clientProjectStatuses),
-  segmentId: optionalId,
   mainResponsibleUserId: optionalId,
   notes: optionalString,
-  accountingTaxRegime: z.enum(accountingTaxRegimes).optional().or(z.literal("").transform(() => undefined)),
-  accountingActivity: z.enum(accountingActivities).optional().or(z.literal("").transform(() => undefined)),
-  accountingState: optionalString,
-  hasMonthlyMovement: optionalBoolean,
-  issuesInvoices: optionalBoolean,
-  invoiceModels: invoiceModelsSchema,
-  hasRentalIrrf: z
-    .union([z.boolean(), z.literal("true"), z.literal("false"), z.literal("on")])
-    .optional()
-    .transform((value) => value === true || value === "true" || value === "on"),
+  accountingTaxRegime: z.enum(accountingTaxRegimes, { message: "Selecione o regime" }),
+  accountingActivity: z.enum(accountingActivities, { message: "Selecione a atividade" }),
+  accountingState: z.enum(brazilianStates, { message: "Selecione a UF" }),
+  hasMonthlyMovement: strictCheckbox,
+  issuesInvoices: strictCheckbox,
+  hasRentalIrrf: strictCheckbox,
+  employeesCount: optionalInteger,
+  modules: modulesSchema,
+  stepOverrides: stepOverridesSchema,
 });
 
 export const routineSchema = z.object({
@@ -118,7 +132,7 @@ export const userEditSchema = z.object({
 
 export type SegmentInput = z.infer<typeof segmentSchema>;
 export type DepartmentInput = z.infer<typeof departmentSchema>;
-export type ClientProjectInput = z.infer<typeof clientProjectSchema>;
+export type CompanyInput = z.infer<typeof companySchema>;
 export type RoutineInput = z.infer<typeof routineSchema>;
 export type TaskInput = z.infer<typeof taskSchema>;
 export type UserEditInput = z.infer<typeof userEditSchema>;

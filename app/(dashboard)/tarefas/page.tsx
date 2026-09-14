@@ -32,7 +32,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3 text-left">Tarefa</th>
-                <th className="px-4 py-3 text-left">Cliente/Projeto</th>
+                <th className="px-4 py-3 text-left">Empresa</th>
                 <th className="px-4 py-3 text-left">Setor</th>
                 <th className="px-4 py-3 text-left">Responsável</th>
                 <th className="px-4 py-3 text-left">Vencimento</th>

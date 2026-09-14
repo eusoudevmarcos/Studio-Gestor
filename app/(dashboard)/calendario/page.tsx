@@ -24,7 +24,7 @@ function Bucket({ title, tasks }: BucketProps) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-medium text-slate-950">{task.title}</p>
-                  <p className="mt-1 text-sm text-slate-500">{task.clientProject?.name ?? "Sem cliente/projeto"} · {task.department.name}</p>
+                  <p className="mt-1 text-sm text-slate-500">{task.clientProject?.name ?? "Sem empresa"} · {task.department.name}</p>
                   <p className="mt-1 text-xs text-slate-500">{formatDate(task.dueDate)}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2">

@@ -1,17 +1,21 @@
-﻿import {
-  addDays,
-  endOfMonth,
-  endOfWeek,
-  isSameMonth,
-  startOfDay,
-  startOfMonth,
-} from "date-fns";
+import { addDays, endOfMonth, endOfWeek, isSameMonth, startOfDay, startOfMonth } from "date-fns";
 import type { TaskStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth/session";
 import { canViewAllTasks } from "@/lib/permissions";
-import { currentFiscalCompetence, fiscalCompetenceLabel, getDemoStore, type DemoStore, type DemoTask } from "@/lib/demo-store";
-import { isAccountingSegmentName } from "@/lib/accounting";
-import { getFiscalRoutineTemplates } from "@/lib/fiscal-routines";
+import { getDemoStore, type DemoClientProject, type DemoStore, type DemoTask } from "@/lib/demo-store";
+import { accountingActivityShortLabels, accountingTaxRegimeShortLabels } from "@/lib/accounting";
+import {
+  closingModules,
+  closingSteps,
+  competenceLabel,
+  defaultCompetence,
+  isCompetence,
+  isDoneStatus,
+  isOpenStatus as isOpenCellStatus,
+  resolveStep,
+  type ClosingCellView,
+  type ClosingModule,
+} from "@/lib/closing";
 
 type SearchFilters = {
   q?: string;
@@ -23,6 +27,9 @@ type SearchFilters = {
   recurrence?: string;
   competence?: string;
   sort?: string;
+  regime?: string;
+  state?: string;
+  pending?: string;
 };
 
 function includes(value: string | null | undefined, query?: string) {
@@ -84,14 +91,22 @@ function visibleTasks(store: DemoStore, filters: SearchFilters = {}) {
     .map((task) => taskWithRelations(store, task));
 }
 
-function isFiscalTask(task: DemoTask) {
-  return task.systemKey?.startsWith("fiscal:") ?? false;
-}
-
 function countBy<T extends string | null>(values: T[]) {
   const map = new Map<T, number>();
   values.forEach((value) => map.set(value, (map.get(value) ?? 0) + 1));
   return [...map.entries()].map(([id, count]) => ({ id, count }));
+}
+
+// Ordena como na planilha: pelo código numérico, depois pelo nome.
+function compareCompanies(a: DemoClientProject, b: DemoClientProject) {
+  const codeA = a.code ? Number(a.code) : Number.POSITIVE_INFINITY;
+  const codeB = b.code ? Number(b.code) : Number.POSITIVE_INFINITY;
+  if (codeA !== codeB) return codeA - codeB;
+  return a.name.localeCompare(b.name);
+}
+
+function isActiveCompany(client: DemoClientProject) {
+  return ["ATIVO", "EM_IMPLANTACAO"].includes(client.status);
 }
 
 export async function getCurrentContext() {
@@ -121,7 +136,7 @@ export async function getFormOptions() {
         segment: findSegment(store, client.segmentId),
         mainResponsible: findUser(store, client.mainResponsibleUserId),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort(compareCompanies),
     routines: store.routines
       .filter((routine) => routine.active)
       .map((routine) => ({
@@ -132,6 +147,214 @@ export async function getFormOptions() {
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
+
+/* ---------------------------------------------------------------------------
+ * Fechamento por competência (matriz empresa × etapa)
+ * ------------------------------------------------------------------------- */
+
+export type ClosingBoardRow = {
+  company: {
+    id: string;
+    code: string | null;
+    name: string;
+    document: string | null;
+    regimeShort: string;
+    activityShort: string;
+    state: string | null;
+    employeesCount: number | null;
+    responsibleName: string | null;
+  };
+  noMovement: boolean | null;
+  note: string | null;
+  cells: ClosingCellView[];
+  applicable: number;
+  done: number;
+  open: number;
+  attention: number;
+};
+
+function buildBoardRow(store: DemoStore, client: DemoClientProject, module: ClosingModule, competence: string): ClosingBoardRow {
+  const row = store.closingRows.find((item) => item.clientProjectId === client.id && item.module === module && item.competence === competence);
+  const storedCells = store.closingCells.filter((item) => item.clientProjectId === client.id && item.module === module && item.competence === competence);
+
+  const cells: ClosingCellView[] = closingSteps[module].map((step) => {
+    const resolution = resolveStep(client, module, step.key, competence, { noMovement: row?.noMovement });
+    const stored = storedCells.find((cell) => cell.stepKey === step.key);
+
+    if (!resolution.applicable) {
+      return {
+        stepKey: step.key,
+        status: "NAO_APLICA",
+        applicable: false,
+        isDefault: true,
+        note: null,
+        doneAt: null,
+        reason: resolution.reason,
+        updatedByName: null,
+        updatedAt: null,
+      };
+    }
+
+    return {
+      stepKey: step.key,
+      status: stored?.status ?? resolution.defaultStatus,
+      applicable: true,
+      isDefault: !stored,
+      note: stored?.note ?? null,
+      doneAt: stored?.doneAt ?? null,
+      flag: resolution.flag,
+      reason: resolution.reason,
+      updatedByName: stored ? findUser(store, stored.updatedById)?.name ?? null : null,
+      updatedAt: stored?.updatedAt ?? null,
+    };
+  });
+
+  const applicableCells = cells.filter((cell) => cell.applicable);
+
+  return {
+    company: {
+      id: client.id,
+      code: client.code,
+      name: client.name,
+      document: client.document,
+      regimeShort: client.accountingTaxRegime ? accountingTaxRegimeShortLabels[client.accountingTaxRegime] : "-",
+      activityShort: client.accountingActivity ? accountingActivityShortLabels[client.accountingActivity] : "-",
+      state: client.accountingState,
+      employeesCount: client.employeesCount,
+      responsibleName: findUser(store, client.mainResponsibleUserId)?.name ?? null,
+    },
+    noMovement: row?.noMovement ?? null,
+    note: row?.note ?? null,
+    cells,
+    applicable: applicableCells.length,
+    done: applicableCells.filter((cell) => isDoneStatus(cell.status)).length,
+    open: applicableCells.filter((cell) => cell.status === "PENDENTE").length,
+    attention: applicableCells.filter((cell) => cell.status === "ATENCAO").length,
+  };
+}
+
+export async function getClosingBoard(module: ClosingModule, filters: SearchFilters = {}) {
+  const store = await getDemoStore();
+  const competence = isCompetence(filters.competence) ? filters.competence : defaultCompetence();
+  const companies = store.clientProjects.filter(isActiveCompany).sort(compareCompanies);
+
+  const allRows = companies.map((client) => buildBoardRow(store, client, module, competence));
+  const rows = allRows
+    .filter((row) => (filters.regime ? store.clientProjects.find((c) => c.id === row.company.id)?.accountingTaxRegime === filters.regime : true))
+    .filter((row) => (filters.state ? row.company.state === filters.state : true))
+    .filter((row) => (filters.pending === "1" ? row.open + row.attention > 0 : true))
+    .filter((row) => includes(row.company.name, filters.q) || includes(row.company.code, filters.q) || includes(row.company.document, filters.q));
+
+  const totals = rows.reduce(
+    (acc, row) => ({
+      applicable: acc.applicable + row.applicable,
+      done: acc.done + row.done,
+      open: acc.open + row.open,
+      attention: acc.attention + row.attention,
+    }),
+    { applicable: 0, done: 0, open: 0, attention: 0 },
+  );
+
+  return {
+    module,
+    competence,
+    competenceLabel: competenceLabel(competence),
+    steps: closingSteps[module],
+    rows,
+    totalCompanies: companies.length,
+    totals: { ...totals, percent: totals.applicable ? Math.round((totals.done / totals.applicable) * 100) : 0 },
+    stateOptions: [...new Set(companies.map((client) => client.accountingState).filter(Boolean))].sort() as string[],
+  };
+}
+
+// Resumo por módulo para o painel.
+export async function getClosingSummary(competence = defaultCompetence()) {
+  const store = await getDemoStore();
+  const companies = store.clientProjects.filter(isActiveCompany).sort(compareCompanies);
+
+  return closingModules.map((module) => {
+    const rows = companies.map((client) => buildBoardRow(store, client, module, competence)).filter((row) => row.applicable > 0);
+    const totals = rows.reduce(
+      (acc, row) => ({
+        applicable: acc.applicable + row.applicable,
+        done: acc.done + row.done,
+        open: acc.open + row.open,
+        attention: acc.attention + row.attention,
+      }),
+      { applicable: 0, done: 0, open: 0, attention: 0 },
+    );
+
+    return {
+      module,
+      competence,
+      competenceLabel: competenceLabel(competence),
+      companies: rows.length,
+      companiesDone: rows.filter((row) => row.open + row.attention === 0).length,
+      ...totals,
+      percent: totals.applicable ? Math.round((totals.done / totals.applicable) * 100) : 0,
+      pendingRows: rows
+        .filter((row) => row.open + row.attention > 0)
+        .sort((a, b) => b.attention - a.attention || b.open - a.open)
+        .slice(0, 8)
+        .map((row) => ({
+          id: row.company.id,
+          code: row.company.code,
+          name: row.company.name,
+          open: row.open,
+          attention: row.attention,
+          pendingSteps: row.cells
+            .filter((cell) => cell.applicable && isOpenCellStatus(cell.status))
+            .map((cell) => closingSteps[module].find((step) => step.key === cell.stepKey)?.label ?? cell.stepKey),
+        })),
+    };
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Empresas
+ * ------------------------------------------------------------------------- */
+
+export async function getCompanies(filters: SearchFilters = {}) {
+  const store = await getDemoStore();
+  return store.clientProjects
+    .filter((client) => (filters.status ? client.status === filters.status : true))
+    .filter((client) => (filters.regime ? client.accountingTaxRegime === filters.regime : true))
+    .filter((client) => (filters.state ? client.accountingState === filters.state : true))
+    .filter((client) => includes(client.name, filters.q) || includes(client.document, filters.q) || includes(client.code, filters.q))
+    .map((client) => ({
+      ...client,
+      mainResponsible: findUser(store, client.mainResponsibleUserId),
+    }))
+    .sort(compareCompanies);
+}
+
+export async function getCompany(id: string) {
+  const store = await getDemoStore();
+  const client = store.clientProjects.find((item) => item.id === id);
+  if (!client) return null;
+
+  const competence = defaultCompetence();
+
+  return {
+    ...client,
+    mainResponsible: findUser(store, client.mainResponsibleUserId),
+    competence,
+    competenceLabel: competenceLabel(competence),
+    closing: closingModules.map((module) => ({ module, row: buildBoardRow(store, client, module, competence) })),
+    tasks: store.tasks
+      .filter((task) => task.clientProjectId === client.id)
+      .map((task) => ({
+        ...task,
+        department: findDepartment(store, task.departmentId),
+        responsible: findUser(store, task.responsibleId),
+      }))
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()),
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Painel
+ * ------------------------------------------------------------------------- */
 
 export async function getDashboardData() {
   const store = await getDemoStore();
@@ -144,63 +367,28 @@ export async function getDashboardData() {
   const openTasks = tasks.filter((task) => isOpenStatus(task.status));
 
   const departmentCounts = countBy(openTasks.map((task) => task.departmentId));
-  const segmentCounts = countBy(openTasks.map((task) => task.segmentId));
-  const responsibleCounts = countBy(tasks.filter((task) => task.status === "CONCLUIDO" && task.completedAt && task.completedAt >= monthStart && task.completedAt <= monthEnd).map((task) => task.responsibleId));
-  const clientCounts = countBy(openTasks.map((task) => task.clientProjectId));
+  const responsibleCounts = countBy(
+    tasks.filter((task) => task.status === "CONCLUIDO" && task.completedAt && task.completedAt >= monthStart && task.completedAt <= monthEnd).map((task) => task.responsibleId),
+  );
 
   return {
+    closing: await getClosingSummary(),
     cards: {
       dueToday: openTasks.filter((task) => task.dueDate >= today && task.dueDate < tomorrow).length,
       overdue: openTasks.filter((task) => task.dueDate < today).length,
       weekTasks: openTasks.filter((task) => task.dueDate >= today && task.dueDate <= weekEnd).length,
       completedThisMonth: tasks.filter((task) => task.status === "CONCLUIDO" && task.completedAt && isSameMonth(task.completedAt, today)).length,
-      waitingClient: tasks.filter((task) => task.status === "AGUARDANDO_CLIENTE").length,
-      activeClients: store.clientProjects.filter((client) => ["ATIVO", "EM_IMPLANTACAO"].includes(client.status)).length,
-      activeRoutines: store.routines.filter((routine) => routine.active).length,
+      activeCompanies: store.clientProjects.filter(isActiveCompany).length,
     },
-    nextTasks: openTasks.slice(0, 8),
-    criticalTasks: openTasks.filter((task) => ["ALTA", "CRITICA"].includes(task.priority)).slice(0, 8),
+    nextTasks: openTasks.slice(0, 6),
     departmentRows: departmentCounts.map((row) => ({ name: findDepartment(store, row.id).name, count: row.count })),
-    segmentRows: segmentCounts.map((row) => ({ name: findSegment(store, row.id)?.name ?? "Sem segmento", count: row.count })),
-    responsibleRows: responsibleCounts.map((row) => ({ name: findUser(store, row.id)?.name ?? "Sem responsÃ¡vel", count: row.count })),
-    clientRows: clientCounts.map((row) => ({ name: findClient(store, row.id)?.name ?? "Sem cliente/projeto", count: row.count })),
+    responsibleRows: responsibleCounts.map((row) => ({ name: findUser(store, row.id)?.name ?? "Sem responsável", count: row.count })),
   };
 }
 
-export async function getClientProjects(filters: SearchFilters = {}) {
-  const store = await getDemoStore();
-  return store.clientProjects
-    .filter((client) => (filters.status ? client.status === filters.status : true))
-    .filter((client) => (filters.segmentId ? client.segmentId === filters.segmentId : true))
-    .filter((client) => includes(client.name, filters.q) || includes(client.document, filters.q))
-    .map((client) => ({
-      ...client,
-      segment: findSegment(store, client.segmentId),
-      mainResponsible: findUser(store, client.mainResponsibleUserId),
-      _count: { tasks: store.tasks.filter((task) => task.clientProjectId === client.id).length },
-    }))
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-}
-
-export async function getClientProject(id: string) {
-  const store = await getDemoStore();
-  const client = store.clientProjects.find((item) => item.id === id);
-  if (!client) return null;
-
-  return {
-    ...client,
-    segment: findSegment(store, client.segmentId),
-    mainResponsible: findUser(store, client.mainResponsibleUserId),
-    tasks: store.tasks
-      .filter((task) => task.clientProjectId === client.id)
-      .map((task) => ({
-        ...task,
-        department: findDepartment(store, task.departmentId),
-        responsible: findUser(store, task.responsibleId),
-      }))
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()),
-  };
-}
+/* ---------------------------------------------------------------------------
+ * Segmentos, setores, rotinas e tarefas
+ * ------------------------------------------------------------------------- */
 
 export async function getSegments(filters: SearchFilters = {}) {
   const store = await getDemoStore();
@@ -289,83 +477,6 @@ export async function getTasks(filters: SearchFilters = {}) {
   return visibleTasks(store, filters);
 }
 
-export async function getFiscalCompetenceData(
-  competence = currentFiscalCompetence(),
-  filters: Pick<SearchFilters, "clientProjectId" | "q" | "sort" | "status"> & { overdue?: boolean } = {},
-) {
-  const store = await getDemoStore();
-  const today = startOfDay(new Date());
-  const allClients = store.clientProjects
-    .filter((client) => {
-      const segment = findSegment(store, client.segmentId);
-      return isAccountingSegmentName(segment?.name) && ["ATIVO", "EM_IMPLANTACAO"].includes(client.status);
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const clients = allClients.filter((client) => (filters.clientProjectId ? client.id === filters.clientProjectId : true));
-
-  const fiscalTasks = store.tasks
-    .filter((task) => task.competence === competence && isFiscalTask(task))
-    .filter((task) => (filters.clientProjectId ? task.clientProjectId === filters.clientProjectId : true))
-    .filter((task) => (filters.status ? task.status === filters.status : true))
-    .filter((task) => (filters.overdue ? isOpenStatus(task.status) && task.dueDate < today : true))
-    .filter((task) => {
-      if (!filters.q) return true;
-      const client = findClient(store, task.clientProjectId);
-      return includes(task.title, filters.q) || includes(task.description, filters.q) || includes(client?.name, filters.q);
-    })
-    .map((task) => taskWithRelations(store, task))
-    .sort((a, b) => {
-      switch (filters.sort) {
-        case "cliente":
-          return (a.clientProject?.name ?? "").localeCompare(b.clientProject?.name ?? "") || a.dueDate.getTime() - b.dueDate.getTime();
-        case "status":
-          return a.status.localeCompare(b.status) || a.dueDate.getTime() - b.dueDate.getTime();
-        case "titulo":
-          return a.title.localeCompare(b.title);
-        case "vencimento-desc":
-          return b.dueDate.getTime() - a.dueDate.getTime();
-        default:
-          return a.dueDate.getTime() - b.dueDate.getTime();
-      }
-    });
-  const openTasks = fiscalTasks.filter((task) => isOpenStatus(task.status));
-  const overdueTasks = openTasks.filter((task) => task.dueDate < today);
-  const todayTasks = openTasks.filter((task) => task.dueDate.getTime() === today.getTime());
-
-  return {
-    competence,
-    competenceLabel: fiscalCompetenceLabel(competence),
-    cards: {
-      clients: allClients.length,
-      visibleClients: clients.length,
-      generatedTasks: fiscalTasks.length,
-      openTasks: openTasks.length,
-      todayTasks: todayTasks.length,
-      overdueTasks: overdueTasks.length,
-      completedTasks: fiscalTasks.filter((task) => task.status === "CONCLUIDO").length,
-    },
-    clientOptions: allClients.map((client) => ({ id: client.id, name: client.name })),
-    clients: clients.map((client) => {
-      const segment = findSegment(store, client.segmentId);
-      const tasks = fiscalTasks
-        .filter((task) => task.clientProjectId === client.id)
-        .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-
-      return {
-        ...client,
-        segment,
-        mainResponsible: findUser(store, client.mainResponsibleUserId),
-        expectedRoutines: getFiscalRoutineTemplates(client),
-        tasks,
-        openTasks: tasks.filter((task) => isOpenStatus(task.status)).length,
-        overdueTasks: tasks.filter((task) => isOpenStatus(task.status) && task.dueDate < today).length,
-        completedTasks: tasks.filter((task) => task.status === "CONCLUIDO").length,
-      };
-    }),
-    tasks: fiscalTasks.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime()),
-  };
-}
-
 export async function getTask(id: string) {
   const store = await getDemoStore();
   const task = store.tasks.find((item) => item.id === id);
@@ -424,9 +535,9 @@ export async function getReportsData() {
     byStatus: countBy(tasks.map((task) => task.status)).map((row) => ({ name: row.id as TaskStatus, count: row.count })),
     byDepartment: countBy(tasks.map((task) => task.departmentId)).map((row) => ({ name: findDepartment(store, row.id).name, count: row.count })),
     bySegment: countBy(tasks.map((task) => task.segmentId)).map((row) => ({ name: findSegment(store, row.id)?.name ?? "Sem segmento", count: row.count })),
-    byResponsible: countBy(tasks.map((task) => task.responsibleId)).map((row) => ({ name: findUser(store, row.id)?.name ?? "Sem responsÃ¡vel", count: row.count })),
+    byResponsible: countBy(tasks.map((task) => task.responsibleId)).map((row) => ({ name: findUser(store, row.id)?.name ?? "Sem responsável", count: row.count })),
     overdueByClient: countBy(openTasks.filter((task) => task.dueDate < today).map((task) => task.clientProjectId)).map((row) => ({
-      name: findClient(store, row.id)?.name ?? "Sem cliente/projeto",
+      name: findClient(store, row.id)?.name ?? "Sem empresa",
       count: row.count,
     })),
     completedThisMonth: tasks
@@ -434,4 +545,3 @@ export async function getReportsData() {
       .slice(0, 20),
   };
 }
-

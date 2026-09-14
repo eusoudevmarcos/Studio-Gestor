@@ -1,55 +1,67 @@
 # Studio Gestor
 
-Sistema web fullstack para gestão operacional de rotinas, tarefas, setores, responsáveis, prazos e entregas em empresas de vários segmentos.
+Controle gerencial interno do escritório contábil: cadastro simples das empresas e o **fechamento por competência em matriz** (empresa × etapa), igual à planilha, para os departamentos **Fiscal** e **Folha**.
 
-## Proposta
+Não há portal do cliente, chamados nem financeiro: é uma ferramenta de acompanhamento para o dono e a equipe.
 
-O Studio Gestor não é exclusivo para contabilidade. A estrutura do MVP segue o fluxo:
+## Como funciona
 
 ```txt
-Organização -> Segmentos -> Setores -> Rotinas -> Tarefas -> Responsáveis -> Prazos -> Status
+Empresa (código, CNPJ, IE / CF-DF, atividade, UF, regime, funcionários...)
+   └── perfil ─► etapas aplicáveis por módulo (automático, com exceções por empresa)
+         └── competência (YYYY-MM) ─► matriz: linha = empresa, coluna = etapa, célula = status
 ```
 
-Segmentos iniciais do seed:
+- **Empresas**: cadastro com os mesmos campos da planilha. Aceita importação em lote colando as linhas do Excel (`Empresas → Importar da planilha`).
+- **Fiscal**: colunas `DW NF · IMPORT · AJUSTE · APURAR · DAS · PIS · COFINS · IRPJ · CSLL · SPED ICMS · EFD CONT · REINF · MIT · DCTFWEB`.
+- **Folha**: colunas `EVENTOS · CALCULO · CONFER · RECIBOS · EXTRATOS · ESOCIAL · GFD · INSS · ENVIO`.
+- **Status da célula** (cores da planilha): concluído (verde, com data), sem movimento (`S. Mov.`), não devido no mês (`Não`), pendente (branco), atenção (amarelo), não se aplica (preto). Marcadores como `IRRF` aparecem em vermelho enquanto pendentes.
+- **Ações da linha** (clique no nome da empresa): sem movimento na competência, observações, concluir pendentes, reabrir tudo.
+- **Painel**: andamento do fechamento da competência por módulo e empresas com pendências.
+- **Tarefas avulsas**: demandas fora da rotina (alteração contratual, parcelamento...).
 
-- Contabilidade
-- Empresa de TI
-- Recrutamento e Seleção
-- Jurídico
-- Marketing
-- Consultoria
-- Financeiro/BPO
+### Regras de aplicabilidade (resumo)
+
+Definidas em [`lib/closing.ts`](lib/closing.ts) e derivadas de regime, atividade, UF, inscrição estadual / CF-DF, emissão de nota, IRRF de aluguel e quantidade de funcionários:
+
+| Etapa | Aplica quando |
+|---|---|
+| DW NF | empresa emite nota |
+| IMPORT | emite nota e (ICMS ou DF) |
+| AJUSTE / APURAR | todo regime exceto MEI |
+| DAS | Simples Nacional / MEI |
+| PIS / COFINS / MIT | Lucro Presumido / Real |
+| IRPJ / CSLL | Lucro Presumido / Real; só vence nas competências 03, 06, 09 e 12 |
+| SPED ICMS | fora do Simples e com IE ou CF-DF |
+| EFD CONT / DCTFWEB | fora do Simples (inclui imune/isenta) |
+| REINF | Lucro Presumido / Real (padrão "Não") ou IRRF de aluguel (pendente com marcador) |
+| Folha (exceto ESOCIAL) | empresa com funcionários (ou não informado) |
+| ESOCIAL | sempre |
+
+Exceções por empresa: `Editar empresa → Avançado` permite forçar "sempre aplica" / "nunca aplica" por etapa, e os módulos Fiscal/Folha podem ser desligados por empresa.
 
 ## Stack
 
-- Next.js App Router
-- TypeScript
-- Tailwind CSS
-- shadcn/ui como padrão de componentes locais
-- Prisma ORM
-- PostgreSQL
-- Auth.js/NextAuth com credenciais
-- Zod
-- React Hook Form
-- date-fns
-- TanStack Table
-- Lucide React
+- Next.js 16 (App Router) + React 19 + TypeScript
+- Tailwind CSS 4 + componentes locais estilo shadcn/ui
+- Prisma ORM + PostgreSQL (schema pronto; ver "Persistência")
+- Auth.js/NextAuth com credenciais (preparado, desligado no modo local)
+- Zod, React Hook Form, date-fns, Lucide
 
-## Modo atual
-
-Nesta etapa, o sistema está em modo operacional local, sem login e sem dependência de PostgreSQL para navegar e testar as telas principais. Os dados ficam em `.demo/studio-gestor-data.json`, arquivo ignorado pelo Git.
-
-A autenticação, usuários reais e conexão definitiva com PostgreSQL ficam preservadas na estrutura do projeto para retomada posterior.
-
-## Configuração com banco
-
-1. Instale dependências:
+## Rodando
 
 ```bash
 npm install
+npm run dev
 ```
 
-2. Crie `.env` com base no `.env.example`:
+Abra `http://localhost:3000`. No primeiro acesso o sistema cria a organização e os usuários iniciais; cadastre ou importe as empresas.
+
+## Persistência
+
+Hoje o sistema roda em **modo local**: os dados ficam em `.demo/studio-gestor-data.json` (ignorado pelo Git), sem login. Isso serve para uso em uma máquina; **na Vercel o arquivo vai para `/tmp` e é perdido a cada deploy**.
+
+Para uso pela equipe em produção, o próximo passo é ligar o PostgreSQL: o `prisma/schema.prisma` já contém `ClientProject` (empresa), `ClosingRow` e `ClosingCell`, e todo acesso a dados passa por `lib/data.ts` e `lib/actions/*`.
 
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
@@ -59,105 +71,37 @@ NEXTAUTH_SECRET="mesmo-valor-do-auth-secret"
 NEXTAUTH_URL="http://localhost:3000"
 ```
 
-3. Quando for ativar banco novamente, rode migrations e seed:
-
 ```bash
 npm run prisma:migrate
 npm run db:seed
 ```
 
-4. Inicie o projeto:
-
-```bash
-npm run dev
-```
-
-Abra `http://localhost:3000`.
-
-## Login do seed futuro
-
-- Admin: `admin@studiogestor.com`
-- Senha: `Studio@123`
-
-Outros usuários fictícios também usam a senha `Studio@123`.
-
-## Scripts
-
-```json
-{
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "lint": "eslint",
-  "prisma:generate": "prisma generate",
-  "prisma:migrate": "prisma migrate dev",
-  "prisma:studio": "prisma studio",
-  "db:seed": "tsx prisma/seed.ts"
-}
-```
+Login do seed: `admin@studiogestor.com` / `Studio@123`.
 
 ## Estrutura
 
 ```txt
-app/
-  (auth)/login
-  (dashboard)/
-    dashboard
-    clientes
-    tarefas
-    rotinas
-    calendario
-    setores
-    segmentos
-    equipe
-    relatorios
-    configuracoes
-components/
-  badges/
-  dashboard/
-  forms/
-  layout/
-  tables/
-  ui/
-lib/
-  actions/
-  auth/
-  permissions/
-  prisma/
-  validations/
-prisma/
-  schema.prisma
-  seed.ts
-types/
+app/(dashboard)/
+  dashboard        painel do fechamento
+  empresas         lista, cadastro, detalhe, importação
+  fiscal, folha    matriz por competência
+  tarefas, calendario, equipe, configuracoes
+components/closing/  matriz (client), página compartilhada, estilos das células
+lib/closing.ts       módulos, etapas, status e regras de aplicabilidade
+lib/data.ts          leitura (board, resumo, empresas, tarefas)
+lib/actions/         companies.ts (CRUD + importação), closing.ts (células/linhas)
+lib/demo-store.ts    armazenamento local (JSON) e seed
+prisma/              schema e seed para PostgreSQL
 ```
 
 ## Perfis
 
-- `ADMIN`: gerencia tudo.
-- `GESTOR`: vê tudo e gerencia rotinas/tarefas/clientes.
-- `COORDENADOR`: trabalha no próprio setor e equipe.
-- `COLABORADOR`: acompanha tarefas atribuídas e do setor.
-- `CONSULTA`: visualização.
-
-## Funcionalidades do MVP
-
-- Login com credenciais.
-- Dashboard com cards, próximos vencimentos, tarefas críticas e rankings.
-- CRUD de Clientes/Projetos.
-- CRUD de Tarefas com comentários e histórico.
-- CRUD de Rotinas e geração de tarefa.
-- CRUD de Segmentos.
-- CRUD de Setores.
-- Calendário por vencimento.
-- Equipe com edição rápida por admin.
-- Relatórios básicos.
-- Prisma schema com multiempresa simples.
-- Seed multi-segmento.
+- `ADMIN` / `GESTOR`: tudo, inclusive excluir empresas.
+- `COORDENADOR` / `COLABORADOR`: cadastram empresas e marcam o fechamento.
+- `CONSULTA`: somente visualização.
 
 ## Próximos passos
 
-- Convites de usuários e redefinição de senha.
-- Auditoria avançada por módulo.
-- Notificações por e-mail.
-- Integrações externas como agenda, WhatsApp e arquivos.
-- Papéis e permissões configuráveis por organização.
+- Ligar PostgreSQL + login para uso multiusuário.
+- Módulo Contábil na mesma matriz.
+- Histórico por célula e relatório de fechamento por competência (exportação).
